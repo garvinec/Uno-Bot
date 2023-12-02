@@ -1,1 +1,3 @@
-# cs4100-final-project
+# Uno Bot
+
+This Uno bot will be trained using Q-learning algorithm.
