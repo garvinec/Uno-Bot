@@ -7,8 +7,8 @@ import sar
 
 class QLearningAgent:
     def __init__(self, alpha=0.2, epsilon=0.4):
-        self.states = sar.states
-        self.actions = sar.actions
+        self.states = sar.states()
+        self.actions = sar.actions()
         self.R = sar.rewards(self.states, self.actions)
         self.alpha = alpha
         self.epsilon = epsilon
@@ -35,6 +35,19 @@ class QLearningAgent:
                 if val >= val_max:
                     val_max = val
                     action = i
+
+        return action
+
+    # for playing against real player after training
+    def choose_move(self, state, actions, q_table):
+        random.shuffle(actions)  # exploit
+        val_max = 0
+
+        for i in actions:
+            val = q_table[q_table['State'] == str(state)][i].values[0]
+            if val >= val_max:
+                val_max = val
+                action = i
 
         return action
 

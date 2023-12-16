@@ -38,8 +38,3 @@ def rewards(states, actions):
         index=states)
 
     return R
-
-
-states = states()
-actions = actions()
-reward_table = rewards(states, actions)

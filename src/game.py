@@ -18,6 +18,8 @@ class UnoGameEngine:
         self.turn = 0  # player plays on odd number, bot plays on even number
         self.color = None  # for wild cards (draw4 and change color)
         self.realPlayer = False
+        q_table = pd.read_csv('csv/q-values.csv')
+        self.q_table = q_table.copy()
 
     # start the game
     def reset(self):
@@ -167,35 +169,10 @@ class UnoGameEngine:
                     self.deck.clear()
             elif card_played[1] == 'Draw4':
                 if len(self.deck) > 4:
-                    # player played the card
-                    if self.turn % 2 == 0:
-                        for c in self.playerHand:
-                            if c[0] == 'Red':
-                                r += 1
-                            elif c[0] == 'Blue':
-                                b += 1
-                            elif c[0] == 'Green':
-                                g += 1
-                            elif c[0] == "Yellow":
-                                y += 1
-                        if r == max(r, g, b, y):
-                            changeTo = 'Red'
-                        elif g == max(r, g, b, y):
-                            changeTo = 'Green'
-                        elif y == max(r, g, b, y):
-                            changeTo = 'Yellow'
-                        elif b == max(r, g, b, y):
-                            changeTo = 'Blue'
-                        self.drawFour('Bot', changeTo)
-                    else:  # bot played the card
-                        # change to random for dummy bot
-                        colors = ["Red", "Blue", "Yellow", "Green"]
-                        self.drawFour('Player', random.choice(colors))
-                else:
-                    self.deck.clear()
-            elif card_played[1] == 'Cc':
-                if self.turn % 2 == 0:
-                    for c in self.playerHand:
+                    hand = self.playerHand
+                    if player == 'ai':
+                        hand = self.botHand
+                    for c in hand:
                         if c[0] == 'Red':
                             r += 1
                         elif c[0] == 'Blue':
@@ -212,12 +189,40 @@ class UnoGameEngine:
                         changeTo = 'Yellow'
                     elif b == max(r, g, b, y):
                         changeTo = 'Blue'
-
-                    self.changeColor(changeTo)
+                    if self.realPlayer:
+                        self.drawFour('Player', changeTo)
+                        self.color = changeTo
+                    else:
+                        self.drawFour('bot', changeTo)
+                        self.color = changeTo
                 else:
-                    # change to random color for dummy bot
-                    colors = ["Red", "Blue", "Yellow", "Green"]
-                    self.changeColor(random.choice(colors))
+                    self.deck.clear()
+            elif card_played[1] == 'Cc':
+                hand = self.playerHand
+                if player == 'ai':
+                    hand = self.botHand
+                for c in hand:
+                    if c[0] == 'Red':
+                        r += 1
+                    elif c[0] == 'Blue':
+                        b += 1
+                    elif c[0] == 'Green':
+                        g += 1
+                    elif c[0] == "Yellow":
+                        y += 1
+                if r == max(r, g, b, y):
+                    changeTo = 'Red'
+                elif g == max(r, g, b, y):
+                    changeTo = 'Green'
+                elif y == max(r, g, b, y):
+                    changeTo = 'Yellow'
+                elif b == max(r, g, b, y):
+                    changeTo = 'Blue'
+
+                self.changeColor(changeTo)
+                self.color = changeTo
+            else:
+                self.color = card_played[0]
             return True
 
     # action functions
@@ -288,9 +293,9 @@ class UnoGameEngine:
 
                 if len(newAction) == 2:
                     self.play((newAction[0].capitalize(),
-                               newAction[1].capitalize()), player)
+                               newAction[1].capitalize()), 'Player')
                 else:
-                    self.play((newAction[0].capitalize(), ), player)
+                    self.play((newAction[0].capitalize(), ), 'Player')
 
     # special card effects - draw2, skip ,draw4, and cc. reverse is neglected because it doesn't do anything in a 1v1 game
     def drawTwo(self, player):
@@ -348,11 +353,6 @@ class UnoGameEngine:
                 print("Bot has drawn")
             hasPlayed = True
 
-    # to provide more information about the player's hand in text-based ui
-    def currentInfo(self):
-        print("Player's Hand: ", self.playerHand)
-        print(f"Cards remaining: {len(self.playerHand)}")
-
     # run game function (real player)
     def run_player(self):
         self.realPlayer = True
@@ -382,12 +382,13 @@ class UnoGameEngine:
             # player's turn to play
             if self.turn % 2 == 0:
                 print(f"{currentTurn}: Player's Turn")
-                self.currentInfo()
+                print("Player's Hand: ", self.playerHand)
                 action = input(
                     "What are you going to play (Please type it in this format: Color Number): ")
 
                 if action == 'D' or action == 'd' or action == 'Draw' or action == 'draw':
                     self.draw("Player")
+                    print(f"Cards remaining: {len(self.playerHand)}")
                     currentTurn += 1
                     self.turn += 1
                     print()
@@ -396,12 +397,14 @@ class UnoGameEngine:
                     if len(card_played) == 2:
                         self.play(
                             (card_played[0].capitalize(), card_played[1].capitalize()), "Player")
+                        print(f"Cards remaining: {len(self.playerHand)}")
                         print("Top card of the pile: ", self.pile[-1])
                         print()
                         currentTurn += 1
                         self.turn += 1
                     else:
                         self.play((card_played[0].capitalize(), ), "Player")
+                        print(f"Cards remaining: {len(self.playerHand)}")
                         print("Top card of the pile: ", self.pile[-1])
                         print()
                         currentTurn += 1
@@ -624,7 +627,114 @@ class UnoGameEngine:
         record = pd.DataFrame(results, columns=['Winner', 'Turns', 'Win_Rate'])
         record.to_csv("csv/records.csv", index=True)
 
+    def run_AI(self):
+        self.realPlayer = True
+        agent = qlearning.QLearningAgent()
+        ended = False
+        players = ['player', 'ai']
+        # for displaying the actual number of turns (self.turn is used to track whose turn it is, not the actual number of turns)
+        currentTurn = 0
+        whoStarts = random.choice(players)
+        if whoStarts == 'ai':
+            currentTurn = 1
+            self.turn = 1
+        self.reset()
+        startingCard = random.choice(self.deck)
+        self.deck.remove(startingCard)
+        self.pile.append(startingCard)
+        print("Starting Card: ", startingCard)
+        while startingCard[0] == 'Wild':
+            startingCard = random.choice(self.deck)
+            self.deck.remove(startingCard)
+            self.pile.append(startingCard)
+            print("Starting Card: ", startingCard)
 
-# run the game engine
-game = UnoGameEngine()
-game.run_agent_train(3000)
+        self.color = startingCard[0]
+        print()
+
+        while not ended:
+            # player's turn to play
+            if self.turn % 2 == 0:
+                print(f"{currentTurn}: Player's Turn")
+                print("Player's Hand: ", self.playerHand)
+                action = input(
+                    "What are you going to play (Please type it in this format: Color Number): ")
+
+                if action == 'D' or action == 'd' or action == 'Draw' or action == 'draw':
+                    self.draw("Player")
+                    print("Top card of the pile: ", self.pile[-1])
+                    print(f"Cards remaining: {len(self.playerHand)}")
+                    currentTurn += 1
+                    self.turn += 1
+                    print()
+                else:
+                    card_played = action.split(' ')
+                    if len(card_played) == 2:
+                        self.play(
+                            (card_played[0].capitalize(), card_played[1].capitalize()), "Player")
+                        print("Top card of the pile: ", self.pile[-1])
+                        print(f"Cards remaining: {len(self.playerHand)}")
+                        print()
+                        currentTurn += 1
+                        self.turn += 1
+                    else:
+                        self.play((card_played[0].capitalize(), ), "Player")
+                        print("Top card of the pile: ", self.pile[-1])
+                        print(f"Cards remaining: {len(self.playerHand)}")
+                        print()
+                        currentTurn += 1
+                        self.turn += 1
+                    if self.hasWon(self.playerHand):
+                        print('Player has won!')
+                        ended = True
+            # ai's turn to play
+            else:
+                print(f"{currentTurn}: Agent's Turn")
+                actions = self.actionsForAgent(
+                    self.botHand)  # all possible legal moves
+                state = self.currentState(self.botHand)
+                if len(actions) == 0:
+                    self.draw("ai")
+                    print('AI has drawn')
+                    print("Top card of the pile: ", self.pile[-1])
+                    print(f"Cards remaining: {len(self.botHand)}")
+                    currentTurn += 1
+                    self.turn += 1
+                    print()
+                else:
+                    action = agent.choose_action(state, actions)
+                    card_played = None
+
+                    for c in self.botHand:
+                        if action == 'Red' or action == 'Green' or action == 'Blue' or action == 'Yellow':
+                            if self.legal_action(c) and c[0] == action:
+                                card_played = c
+                        else:
+                            if self.legal_action(c) and c[1] == action:
+                                card_played = c
+
+                    if len(card_played) == 2:
+                        self.play_agent(
+                            (card_played[0].capitalize(), card_played[1].capitalize()), "ai")
+                        print("Top card of the pile: ", self.pile[-1])
+                        print(f"Cards remaining: {len(self.botHand)}")
+                        print()
+                        agent.update_q_table(state, action)
+                        currentTurn += 1
+                        self.turn += 1
+                    else:
+                        self.play_agent(
+                            (card_played[0].capitalize(), ), "ai")
+                        print("Top card of the pile: ", self.pile[-1])
+                        print(f"Cards remaining: {len(self.botHand)}")
+                        print()
+                        agent.update_q_table(state, action)
+                        currentTurn += 1
+                        self.turn += 1
+                    if self.hasWon(self.botHand):
+                        print('Agent has won!')
+                        ended = True
+
+            if len(self.deck) == 0:
+                print("Game ended with a tie")
+                ended = True
