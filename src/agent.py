@@ -52,6 +52,7 @@ class QLearningAgent:
         return action
 
     def update_q_table(self, state, action):
+        # use q-function
         if self.prev_state != 0:
             prev_q = self.q_table.loc[[self.prev_state], self.prev_action][0]
             this_q = self.q_table.loc[[state], action][0]
